@@ -1,70 +1,63 @@
+import cn from 'classnames'
 import PropTypes from 'prop-types'
 import React, { Component } from 'react'
-import TimeSlot from './TimeSlot'
-import date from './utils/dates.js'
 import localizer from './localizer'
 import { elementType, dateFormat } from './utils/propTypes'
 
 export default class TimeSlotGroup extends Component {
   static propTypes = {
-    dayWrapperComponent: elementType,
-    timeslots: PropTypes.number.isRequired,
-    step: PropTypes.number.isRequired,
-    value: PropTypes.instanceOf(Date).isRequired,
+    timeSlotWrapperComponent: elementType,
+    group: PropTypes.array.isRequired,
     showLabels: PropTypes.bool,
     isNow: PropTypes.bool,
     slotPropGetter: PropTypes.func,
-    timeGutterFormat: dateFormat,
+    labelFormat: dateFormat,
     culture: PropTypes.string,
     resource: PropTypes.string,
   }
   static defaultProps = {
-    timeslots: 2,
-    step: 30,
     isNow: false,
     showLabels: false,
   }
 
-  renderSlice(slotNumber, content, value) {
+  renderSlot = (value, idx) => {
     const {
-      dayWrapperComponent,
-      showLabels,
       isNow,
-      culture,
       resource,
+      showLabels,
+      culture,
+      labelFormat,
       slotPropGetter,
+      timeSlotWrapperComponent: Wrapper,
     } = this.props
+
+    const slotProps = (slotPropGetter && slotPropGetter(value)) || {}
+    const children =
+      !!(idx === 0 && showLabels) &&
+      localizer.format(value, labelFormat, culture)
+
     return (
-      <TimeSlot
-        key={slotNumber}
-        slotPropGetter={slotPropGetter}
-        dayWrapperComponent={dayWrapperComponent}
-        showLabel={showLabels && !slotNumber}
-        content={content}
-        culture={culture}
-        isNow={isNow}
-        resource={resource}
-        value={value}
-      />
+      <Wrapper key={idx} value={value} resource={resource}>
+        <div
+          {...slotProps}
+          className={cn(
+            'rbc-time-slot',
+            slotProps.className,
+            children && 'rbc-label',
+            isNow && 'rbc-now'
+          )}
+        >
+          {children}
+        </div>
+      </Wrapper>
     )
   }
 
-  renderSlices() {
-    const ret = []
-    const sliceLength = this.props.step
-    let sliceValue = this.props.value
-    for (let i = 0; i < this.props.timeslots; i++) {
-      const content = localizer.format(
-        sliceValue,
-        this.props.timeGutterFormat,
-        this.props.culture
-      )
-      ret.push(this.renderSlice(i, content, sliceValue))
-      sliceValue = date.add(sliceValue, sliceLength, 'minutes')
-    }
-    return ret
-  }
   render() {
-    return <div className="rbc-timeslot-group">{this.renderSlices()}</div>
+    const { group } = this.props
+
+    return (
+      <div className="rbc-timeslot-group">{group.map(this.renderSlot)}</div>
+    )
   }
 }

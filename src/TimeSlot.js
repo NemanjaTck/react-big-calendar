@@ -5,11 +5,10 @@ import { elementType } from './utils/propTypes'
 
 export default class TimeSlot extends Component {
   static propTypes = {
-    dayWrapperComponent: elementType,
+    timeSlotWrapperComponent: elementType,
     value: PropTypes.instanceOf(Date).isRequired,
     isNow: PropTypes.bool,
     showLabel: PropTypes.bool,
-    content: PropTypes.string,
     culture: PropTypes.string,
     slotPropGetter: PropTypes.func,
     resource: PropTypes.string,
@@ -22,8 +21,8 @@ export default class TimeSlot extends Component {
   }
 
   render() {
-    const { value, slotPropGetter, resource } = this.props
-    const Wrapper = this.props.dayWrapperComponent
+    const { value, slotPropGetter, resource, isNow, children } = this.props
+    const Wrapper = this.props.timeSlotWrapperComponent
     const { className, style } = (slotPropGetter && slotPropGetter(value)) || {}
 
     return (
@@ -33,11 +32,11 @@ export default class TimeSlot extends Component {
           className={cn(
             'rbc-time-slot',
             className,
-            this.props.showLabel && 'rbc-label',
-            this.props.isNow && 'rbc-now'
+            children && 'rbc-label',
+            isNow && 'rbc-now'
           )}
         >
-          {this.props.showLabel && <span>{this.props.content}</span>}
+          {children}
         </div>
       </Wrapper>
     )

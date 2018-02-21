@@ -5,6 +5,7 @@ import cn from 'classnames'
 
 import Selection, { getBoundsForNode, isEvent } from './Selection'
 import dates from './utils/dates'
+import * as DaySlotUtils from './utils/DaySlots'
 import { isSelected } from './utils/selection'
 import localizer from './localizer'
 
@@ -12,27 +13,16 @@ import { notify } from './utils/helpers'
 import { accessor, elementType, dateFormat } from './utils/propTypes'
 import { accessor as get } from './utils/accessors'
 
-import getStyledEvents, {
-  positionFromDate,
-  startsBefore,
-} from './utils/dayViewLayout'
+import * as DayEventLayout from './utils/DayEventLayout'
 
 import TimeColumn from './TimeColumn'
-
-function snapToSlot(date, step) {
-  var roundTo = 1000 * 60 * step
-  return new Date(Math.floor(date.getTime() / roundTo) * roundTo)
-}
-
-function startsAfter(date, max) {
-  return dates.gt(dates.merge(max, date), max, 'minutes')
-}
 
 class DayColumn extends React.Component {
   static propTypes = {
     events: PropTypes.array.isRequired,
     components: PropTypes.object,
     step: PropTypes.number.isRequired,
+    date: PropTypes.instanceOf(Date).isRequired,
     min: PropTypes.instanceOf(Date).isRequired,
     max: PropTypes.instanceOf(Date).isRequired,
     getNow: PropTypes.func.isRequired,
@@ -67,7 +57,7 @@ class DayColumn extends React.Component {
     dragThroughEvents: PropTypes.bool,
     eventPropGetter: PropTypes.func,
     dayPropGetter: PropTypes.func,
-    dayWrapperComponent: elementType,
+    timeSlotWrapperComponent: elementType,
     eventComponent: elementType,
     eventWrapperComponent: elementType.isRequired,
     resource: PropTypes.string,
@@ -79,6 +69,12 @@ class DayColumn extends React.Component {
   }
 
   state = { selecting: false }
+
+  constructor(...args) {
+    super(...args)
+
+    this.slotMetrics = DaySlotUtils.getSlotMetrics(this.props)
+  }
 
   componentDidMount() {
     this.props.selectable && this._selectable()
@@ -92,13 +88,14 @@ class DayColumn extends React.Component {
     if (nextProps.selectable && !this.props.selectable) this._selectable()
     if (!nextProps.selectable && this.props.selectable)
       this._teardownSelectable()
+
+    this.slotMetrics = this.slotMetrics.update(nextProps)
   }
 
   render() {
     const {
-      min,
       max,
-      step,
+      date,
       getNow,
       selectRangeFormat,
       culture,
@@ -106,9 +103,7 @@ class DayColumn extends React.Component {
       ...props
     } = this.props
 
-    this._totalMin = dates.diff(min, max, 'minutes')
-    let { selecting, startSlot, endSlot } = this.state
-    let slotStyle = this._slotStyle(startSlot, endSlot)
+    let { selecting, top, height } = this.state
 
     let selectDates = {
       start: this.state.startDate,
@@ -121,22 +116,21 @@ class DayColumn extends React.Component {
     return (
       <TimeColumn
         {...props}
+        slotMetrics={this.slotMetrics}
         className={cn(
-          'rbc-day-slot',
           className,
-          dates.eq(max, current, 'day') && 'rbc-today'
+          'rbc-day-slot',
+          selecting && 'rbc-slot-selecting',
+          dates.eq(date, current, 'day') && 'rbc-today'
         )}
         style={style}
         getNow={getNow}
-        min={min}
-        max={max}
-        step={step}
       >
         <div className={cn('rbc-events-container', { rtl: this.props.rtl })}>
           {this.renderEvents()}
         </div>
         {selecting && (
-          <div className="rbc-slot-selection" style={slotStyle}>
+          <div className="rbc-slot-selection" style={{ top, height }}>
             <span>
               {localizer.format(selectDates, selectRangeFormat, culture)}
             </span>
@@ -162,23 +156,16 @@ class DayColumn extends React.Component {
       min,
       rtl: isRtl,
       selected,
-      showMultiDayTimes,
       startAccessor,
-      step,
-      timeslots,
       titleAccessor,
       tooltipAccessor,
     } = this.props
 
-    let styledEvents = getStyledEvents({
+    let styledEvents = DayEventLayout.getStyledEvents({
       events,
       startAccessor,
       endAccessor,
-      min,
-      showMultiDayTimes,
-      totalMin: this._totalMin,
-      step,
-      timeslots,
+      slotMetrics: this.slotMetrics,
     })
 
     return styledEvents.map(({ event, style }, idx) => {
@@ -200,8 +187,8 @@ class DayColumn extends React.Component {
         _eventTimeRangeFormat = eventTimeRangeStartFormat
       }
 
-      let continuesPrior = startsBefore(start, min)
-      let continuesAfter = startsAfter(end, max)
+      let continuesPrior = this.slotMetrics.startsBefore(start)
+      let continuesAfter = this.slotMetrics.startsAfter(end)
 
       let title = get(event, titleAccessor)
       let tooltip = get(event, tooltipAccessor)
@@ -263,16 +250,6 @@ class DayColumn extends React.Component {
     })
   }
 
-  _slotStyle = (startSlot, endSlot) => {
-    let top = startSlot / this._totalMin * 100
-    let bottom = endSlot / this._totalMin * 100
-
-    return {
-      top: top + '%',
-      height: bottom - top + '%',
-    }
-  }
-
   _selectable = () => {
     let node = findDOMNode(this)
     let selector = (this._selector = new Selection(() => findDOMNode(this), {
@@ -298,33 +275,31 @@ class DayColumn extends React.Component {
     }
 
     let selectionState = ({ y }) => {
-      let { step, min, max } = this.props
       let { top, bottom } = getBoundsForNode(node)
 
-      let mins = this._totalMin
-
       let range = Math.abs(top - bottom)
+      let currentSlot = this.slotMetrics.closestSlotToPosition(
+        (y - top) / range
+      )
 
-      let current = (y - top) / range
+      if (!this.state.selecting) this._initialSlot = currentSlot
 
-      current = snapToSlot(minToDate(mins * current, min), step)
+      let initialSlot = this._initialSlot
+      if (initialSlot === currentSlot)
+        currentSlot = this.slotMetrics.nextSlot(initialSlot)
 
-      if (!this.state.selecting) this._initialDateSlot = current
-
-      let initial = this._initialDateSlot
-
-      if (dates.eq(initial, current, 'minutes'))
-        current = dates.add(current, step, 'minutes')
-
-      let start = dates.max(min, dates.min(initial, current))
-      let end = dates.min(max, dates.max(initial, current))
+      const selectRange = this.slotMetrics.getRange(
+        dates.min(initialSlot, currentSlot),
+        dates.max(initialSlot, currentSlot)
+      )
 
       return {
         selecting: true,
-        startDate: start,
-        endDate: end,
-        startSlot: positionFromDate(start, min, this._totalMin),
-        endSlot: positionFromDate(end, min, this._totalMin),
+        startDate: selectRange.startDate,
+        endDate: selectRange.endDate,
+
+        top: `${selectRange.top}%`,
+        height: `${selectRange.height}%`,
       }
     }
 
@@ -387,16 +362,6 @@ class DayColumn extends React.Component {
   _doubleClick = (...args) => {
     notify(this.props.onDoubleClickEvent, args)
   }
-}
-
-function minToDate(min, date) {
-  var dt = new Date(date),
-    totalMins = dates.diff(dates.startOf(date, 'day'), date, 'minutes')
-
-  dt = dates.hours(dt, 0)
-  dt = dates.minutes(dt, totalMins + min)
-  dt = dates.seconds(dt, 0)
-  return dates.milliseconds(dt, 0)
 }
 
 export default DayColumn

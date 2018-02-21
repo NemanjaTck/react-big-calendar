@@ -7,20 +7,16 @@ import { findDOMNode } from 'react-dom'
 import dates from './utils/dates'
 import localizer from './localizer'
 import DayColumn from './DayColumn'
-import TimeColumn from './TimeColumn'
+import TimeGutter from './TimeGutter'
 import DateContentRow from './DateContentRow'
 import Header from './Header'
 
 import getWidth from 'dom-helpers/query/width'
 import scrollbarSize from 'dom-helpers/util/scrollbarSize'
 import message from './utils/messages'
-
 import { accessor, dateFormat } from './utils/propTypes'
-
 import { notify } from './utils/helpers'
-
 import { accessor as get } from './utils/accessors'
-
 import { inRange, sortEvents, segStyle } from './utils/eventLevels'
 
 export default class TimeGrid extends Component {
@@ -73,13 +69,10 @@ export default class TimeGrid extends Component {
 
   static defaultProps = {
     step: 30,
+    timeslots: 2,
     min: dates.startOf(new Date(), 'day'),
     max: dates.endOf(new Date(), 'day'),
     scrollToTime: dates.startOf(new Date(), 'day'),
-    /* this is needed to satisfy requirements from TimeColumn required props
-     * There is a strange bug in React, using ...TimeColumn.defaultProps causes weird crashes
-     */
-    type: 'gutter',
   }
 
   constructor(props) {
@@ -203,12 +196,12 @@ export default class TimeGrid extends Component {
         {this.renderHeader(range, allDayEvents, width, resources)}
 
         <div ref="content" className="rbc-time-content">
-          <TimeColumn
+          <TimeGutter
             {...this.props}
-            showLabels
-            style={{ width }}
-            ref={gutterRef}
+            width={width}
+            date={start}
             className="rbc-time-gutter"
+            ref={gutterRef}
           />
           {eventsRendered}
 
@@ -255,7 +248,7 @@ export default class TimeGrid extends Component {
             resource={resource && resource.id}
             eventComponent={components.event}
             eventWrapperComponent={components.eventWrapper}
-            dayWrapperComponent={components.dayWrapper}
+            timeSlotWrapperComponent={components.dayWrapper}
             className={cn({ 'rbc-now': dates.eq(date, today, 'day') })}
             style={segStyle(1, this.slots)}
             key={idx + '-' + id}
